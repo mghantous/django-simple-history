@@ -176,7 +176,7 @@ class HistoricalRecords(object):
         """
         meta_fields = {
             'ordering': ('-history_date', '-history_id'),
-            'app_label': model._meta.app_label,
+            # 'app_label': model._meta.app_label,
         }
         if self.user_set_verbose_name:
             name = self.user_set_verbose_name
@@ -287,8 +287,9 @@ class CustomForeignKeyField(models.ForeignKey):
             try:
                 instance_type = cls.instance_type
             except AttributeError:  # when model is reconstituted for migration
-                if cls.__module__ != "__fake__":  # not from migrations, error
-                    raise
+                # if cls.__module__ != "__fake__":  # not from migrations, error
+                #     raise
+                pass # HACK, because polymorphic models don't seem to have an instance_type
             else:
                 self.related = RelatedObject(other, instance_type, self)
         transform_field(field)
