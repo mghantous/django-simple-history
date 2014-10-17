@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.db import models
 
 
@@ -17,15 +19,24 @@ class HistoryManager(models.Manager):
         self.model = model
         self.instance = instance
 
-    def get_query_set(self):
-        if self.instance is None:
+    def get_super_queryset(self):
+        try:
+            return super(HistoryManager, self).get_queryset()
+        except AttributeError:
             return super(HistoryManager, self).get_query_set()
+
+    def get_queryset(self):
+        qs = self.get_super_queryset()
+        if self.instance is None:
+            return qs
 
         if isinstance(self.instance._meta.pk, models.OneToOneField):
             filter = {self.instance._meta.pk.name + "_id": self.instance.pk}
         else:
             filter = {self.instance._meta.pk.name: self.instance.pk}
-        return super(HistoryManager, self).get_query_set().filter(**filter)
+        return self.get_super_queryset().filter(**filter)
+
+    get_query_set = get_queryset
 
     def most_recent(self):
         """
@@ -33,7 +44,7 @@ class HistoryManager(models.Manager):
         """
         if not self.instance:
             raise TypeError("Can't use most_recent() without a %s instance." %
-                            self.instance._meta.object_name)
+                            self.model._meta.object_name)
         tmp = []
         for field in self.instance._meta.fields:
             if isinstance(field, models.ForeignKey):
@@ -49,27 +60,36 @@ class HistoryManager(models.Manager):
         return self.instance.__class__(*values)
 
     def as_of(self, date):
-        """
-        Returns an instance of the original model with all the attributes set
-        according to what was present on the object on the date provided.
+        """Get a snapshot as of a specific date.
+
+        Returns an instance, or an iterable of the instances, of the
+        original model with all the attributes set according to what
+        was present on the object on the date provided.
         """
         if not self.instance:
-            raise TypeError("Can't use as_of() without a %s instance." %
-                            self.instance._meta.object_name)
-        tmp = []
-        for field in self.instance._meta.fields:
-            if isinstance(field, models.ForeignKey):
-                tmp.append(field.name + "_id")
-            else:
-                tmp.append(field.name)
-        fields = tuple(tmp)
-        qs = self.filter(history_date__lte=date)
+            return self._as_of_set(date)
+        queryset = self.filter(history_date__lte=date)
         try:
-            values = qs.values_list('history_type', *fields)[0]
+            history_obj = queryset[0]
         except IndexError:
-            raise self.instance.DoesNotExist("%s had not yet been created." %
-                                             self.instance._meta.object_name)
-        if values[0] == '-':
-            raise self.instance.DoesNotExist("%s had already been deleted." %
-                                             self.instance._meta.object_name)
-        return self.instance.__class__(*values[1:])
+            raise self.instance.DoesNotExist(
+                "%s had not yet been created." %
+                self.instance._meta.object_name)
+        if history_obj.history_type == '-':
+            raise self.instance.DoesNotExist(
+                "%s had already been deleted." %
+                self.instance._meta.object_name)
+        return history_obj.instance
+
+    def _as_of_set(self, date):
+        model = type(self.model().instance)  # a bit of a hack to get the model
+        pk_attr = model._meta.pk.name
+        queryset = self.filter(history_date__lte=date)
+        for original_pk in set(
+                queryset.order_by().values_list(pk_attr, flat=True)):
+            changes = queryset.filter(**{pk_attr: original_pk})
+            last_change = changes.latest('history_date')
+            if changes.filter(history_date=last_change.history_date,
+                              history_type='-').exists():
+                continue
+            yield last_change.instance

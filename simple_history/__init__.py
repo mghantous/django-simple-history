@@ -1,10 +1,9 @@
-import models
+from __future__ import unicode_literals
+
+__version__ = '1.5.1'
 
 
-registered_models = {}
-
-
-def register(model, app=None, manager_name='history'):
+def register(model, app=None, manager_name='history', **records_config):
     """
     Create historical model for `model` and attach history manager to `model`.
 
@@ -15,8 +14,11 @@ def register(model, app=None, manager_name='history'):
     This method should be used as an alternative to attaching an
     `HistoricalManager` instance directly to `model`.
     """
-    if not model in registered_models:
-        records = models.HistoricalRecords()
+    from . import models
+    if not model._meta.db_table in models.registered_models:
+        records = models.HistoricalRecords(**records_config)
         records.manager_name = manager_name
-        records.module = ("%s.models" % app) or model.__module__
+        records.module = app and ("%s.models" % app) or model.__module__
+        records.add_extra_methods(model)
         records.finalize(model)
+        models.registered_models[model._meta.db_table] = model

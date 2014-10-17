@@ -1,1 +1,15 @@
+*.pyc
+dist/
+*.egg
+*.egg-info/
+build/
+docs/_build
+MANIFEST
+.coverage
+.tox/
+htmlcov/
+test_files/
+/.ve
+/.project
+/.pydevproject
 .idea/
